@@ -1,10 +1,4 @@
 """Reasonably generic [continuously] deployment framework"""
-# When we need to make this work across multiple nodes:
-# I really have no reason to use Commander over Fabric: I don't need Chief, and
-# nearly all the features and conveniences Commander had over Fabric have been
-# since implemented in Fabric. Fabric has more features and more support and
-# was released more recently. OTOH, Fabric's argument conventions are crazy.
-
 # TODO: Update the deployment script first, and use the new version to deploy.
 # That way, each version is deployed by the deployment script that ships with
 # it.
