@@ -1,7 +1,4 @@
-"""Reasonably generic [continuously] deployment framework"""
-# TODO: Update the deployment script first, and use the new version to deploy.
-# That way, each version is deployed by the deployment script that ships with
-# it.
+"""A reasonably generic [continuous] deployment framework"""
 
 from contextlib import contextmanager
 from optparse import OptionParser
