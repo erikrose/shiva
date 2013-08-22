@@ -10,7 +10,7 @@ from tempfile import gettempdir
 
 
 def run(command, **kwargs):
-    """Return the output of a command.
+    """Return the output of a command, and raise CalledProcessError on failure.
 
     Pass in any kind of shell-executable line you like, with one or more
     commands, pipes, etc. Any kwargs will be shell-escaped and then subbed into

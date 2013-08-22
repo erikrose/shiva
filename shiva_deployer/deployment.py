@@ -1,43 +1,86 @@
-from optparse import OptionParser
+from virtualenv import create_environment
 
-from shiva.exceptions import ShouldNotDeploy
-from shiva.tools import nonblocking_lock
-
-
-# TODO: Move or remove.
-def main():
-    """Handle command-line munging, and pass off control to the interesting
-    stuff."""
-    parser = OptionParser(
-        usage='usage: %prog [options] <staging | prod>',
-        description='Deploy a new version of DXR.')
-    parser.add_option('-b', '--base', dest='base_path',
-                      help='Path to the dir containing the builds, instances, '
-                           'and deployment links')
-    parser.add_option('-p', '--python', dest='python_path',
-                      help='Path to the Python executable on which to base the'
-                           ' virtualenvs')
-    parser.add_option('-e', '--repo', dest='repo',
-                      help='URL of the git repo from which to download DXR. '
-                           'Use HTTPS if possible to ward off spoofing.')
-    parser.add_option('-r', '--rev', dest='manual_rev',
-                      help='A hash of the revision to deploy. Defaults to the '
-                           'last successful Jenkins build on master.')
-
-    options, args = parser.parse_args()
-    if len(args) == 1:
-        non_none_options = dict((k, getattr(options, k)) for k in
-                                (o.dest for o in parser.option_list if o.dest)
-                                if getattr(options, k))
-        Deployment(args[0], **non_none_options).deploy_if_appropriate()
-    else:
-        parser.print_usage()
+from shiva_deployer.exceptions import ShouldNotDeploy
+from shiva_deployer.tools import nonblocking_lock
 
 
-class Deployment(object):
-    """A little inversion-of-control framework for deployments
+class BasicDeployment(object):
+    """Minimal abstract class that must be parametrized to have a successful
+    Shiva deployment
 
-    Maybe someday we'll plug in methods to handle a different project.
+    """
+    # ---------------- Commonly overridden: ----------------
+
+    def get_lock_name(self):
+        """Return the name of the lock to take out.
+
+        This Deployment will cause any other Deployments which try to run
+        concurrently to quietly abort.
+
+        This default implementation returns the name of the repository: that
+        is, the name of the folder containing the "deployment" folder.
+
+        """
+        raise NotImplementedError  # TODO
+
+    def check_out(self):
+        """Check out the version of the project we should deploy, and return
+        its absolute path on disk."""
+        raise NotImplementedError
+
+    def install(self, checkout_path):
+        """Build and install the project.
+
+        :arg checkout_path: The absolute path at which the project to install
+            is checked out
+
+        """
+        raise NotImplementedError
+
+    # ---------------- Not commonly overridden: ----------------
+
+    def deploy_if_appropriate(self):
+        """Deploy a new build if we should."""
+        # Makes a venv. If there was one from last time, finds it (to save disk IO).
+        deployment_venv = self.create_environment('/temp/dir/deployment1',
+                                                  site_packages=False,
+                                                  clear=False,
+                                                  never_download=True)
+        # Peep- or pip-installs dxr/deployment/requirements.txt (should include shiva).
+
+        # Runs `venv/python -m shiva_the_deployer get_lock_name /path/to/deploy.py`
+        lock_name = run_deploy_script('get_lock_name')  # TODO: Pass through the argv I received here and at every other invocation of run_deploy_script.
+
+        # Takes out a nonblocking (fallthrough) lock. Maybe make it blocking optionally for pushbutton deploys. If it changes from one binary call to the next, take out both locks to be safe.
+        with nonblocking_lock('shiva-deployer-%s' % lock_name) as got_lock:
+            if got_lock:
+                try:
+                    # Runs `venv/python dxr/deployment/deploy.py check_out`, which checks out the latest good version of the project and outputs project:/path/to/checkout.
+                    old_checkout_path = ''
+                    # Keep checking things out until they stabilize. This
+                    # allows us to follow a moving repo from one location to
+                    # another, even if it moved multiple times (and had its
+                    # check_out() updated) since the current on-disk repo was
+                    # checked out.
+                    while checkout_path != old_checkout_path:
+                        checkout_path = run_deploy_script('check_out')
+                        # Makes a new venv.
+                        # Peep- or pip-installs dxr/deployment/requirements.txt
+                        # (We can skip the previous 2 steps if the requirements are unchanged. A pip download cache should make none of this matter much.)
+
+                    # Runs `venv/python /path/to/checkout/.../deploy.py`, which builds the project as contained in the checkout and installs it
+                    run_deploy_script('build_and_install')
+                except ShouldNotDeploy:
+                    pass
+                else:
+                    # if not self.passes_smoke_test():
+                    #     self.rollback()
+                    pass
+
+
+class FancyDeployment(BasicDeployment):
+    """A heavier inversion-of-control framework than BasicDeployment which
+    saves effort for most projects
 
     """
     def __init__(self,
@@ -77,6 +120,37 @@ class Deployment(object):
         self.repo = repo
         self.manual_rev = manual_rev
 
+    @classmethod
+    def new_from_command_line(cls):
+        """Handle command-line munging, and pass off control to the interesting
+        stuff.
+        
+        """
+        # TODO: Replace with a generic UI.
+        parser = OptionParser(
+            usage='usage: %prog [options] <staging | prod>',
+            description='Deploy a new version of DXR.')
+        parser.add_option('-b', '--base', dest='base_path',
+                          help='Path to the dir containing the builds, instances, '
+                               'and deployment links')
+        parser.add_option('-p', '--python', dest='python_path',
+                          help='Path to the Python executable on which to base the'
+                               ' virtualenvs')
+        parser.add_option('-e', '--repo', dest='repo',
+                          help='URL of the git repo from which to download DXR. '
+                               'Use HTTPS if possible to ward off spoofing.')
+        parser.add_option('-r', '--rev', dest='manual_rev',
+                          help='A hash of the revision to deploy. Defaults to the '
+                               'last successful Jenkins build on master.')
+        options, args = parser.parse_args()
+        non_none_options = dict((k, getattr(options, k)) for k in
+                                (o.dest for o in parser.option_list if o.dest)
+                                if getattr(options, k))
+        try:
+            return cls(*args, **non_none_options).deploy_if_appropriate()
+        except TypeError:
+            parser.print_usage()  # TODO: return or raise something
+
     def rev_to_deploy(self):
         """Return the VCS revision identifier of the version we should
         deploy.
@@ -86,6 +160,9 @@ class Deployment(object):
         deploy), raise ShouldNotDeploy.
 
         """
+        # Raise ShouldNotDeploy if we're already up to date, which means we'll
+        # have to be able to find and get the rev of the currently deployed
+        # version.
 
     def build(self, rev):
         """Create and return the path of a new directory containing a new
@@ -109,32 +186,3 @@ class Deployment(object):
         not deploy for some anticipated reason, raise ShouldNotDeploy.
 
         """
-
-    def _kind_of_deployment(self):
-        """Return a string unique across deployments that should not run
-        simultaneously.
-
-        This is used as part of the name of a lockfile to prevent concurrent
-        runs of (for example) the same deployment process.
-
-        """
-        return 'any-deployment'
-
-    def deploy_if_appropriate(self):
-        """Deploy a new build if we should."""
-        with nonblocking_lock(self._kind_of_deployment()) as got_lock:
-            if got_lock:
-                try:
-                    rev = self.manual_rev or self.rev_to_deploy()
-                    new_build_path = self.build(rev)
-                    self.install(new_build_path)
-                except ShouldNotDeploy:
-                    pass
-                else:
-                    # if not self.passes_smoke_test():
-                    #     self.rollback()
-                    pass
-
-
-if __name__ == '__main__':
-    main()

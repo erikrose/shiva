@@ -2,7 +2,28 @@
 deployment"""
 
 from optparse import OptionParser
-from sys import argv, executable
+import pickle
+from sys import argv, executable, stderr
+
+from shiva_deployer import run, ShouldNotDeploy
+
+
+def run_deploy_script(arg_string):
+    """Run a private shiva command in a new process.
+
+    Translate from the packed JSON the command returns into native
+    representation.
+
+    """
+    # We use the default, ASCII pickle format to communicate between private
+    # shiva subcommands and the parent process. It saves us reinventing
+    # serialization of ShouldNotDeploy instances.
+    result = pickle.loads(run('venv/python -m shiva_the_deployer /path/to/deploy.py %s' % arg_string)
+    if isinstance(result, ShouldNotDeploy):
+        raise result
+    # Otherwise, the subprocess will exit with a non-zero, and run() will raise
+    # a CalledProcessError.
+    return result
 
 
 def main():
@@ -10,17 +31,32 @@ def main():
     deployment script to pull down the latest good version of a project, then
     install it using that new version of the deployment script."""
     parser = OptionParser(
-        usage='usage: %prog /path/to/deployment/dir [args options]',
+        usage='usage: %prog /some/dir/deploy.py [args options]',
         description='Deploy a new version of the project using the deploy.py '
-                    'script in /path/to/deployment/dir, run in a virtualenv '
-                    'having the packages specified by '
-                    '/path/to/deployent/dir/requirements.txt.')
-    # Makes a venv. If there was one from last time, finds it (to save disk IO).
-    # Peep- or pip-installs dxr/deployment/requirements.txt
-    # Runs `venv/python dxr/deployment/deploy.py bootstrap`, which checks out the latest good version of the project and outputs project:/path/to/checkout.
-    # Makes a new venv.
-    # Peep- or pip-installs dxr/deployment/requirements.txt
-    # (We can skip the previous 2 steps if the requirements are unchanged. A pip download cache should make none of this matter much.)
-    # Runs `venv/python /path/to/checkout/.../deploy.py`, which builds the project as contained in the checkout and installs it
+                    'script, run in a virtualenv having the packages specified'
+                    ' by /some/dir/requirements.txt.\n\nThe given deploy.py on disk is used only to bootstrap; the actual version that is used to do the deployment (and the actual requirements.txt used) is the latest good version, as determined by the local deploy.py.')
+    parser.add_option('--shiva-subcommand',
+                      dest='subcommand',
+                      default='deploy',
+                      help='A secret option used internally')
+    args, options = parse.parse_args()
+    if len(args) >= 1:
+        if options.subcommand in ('get_lock_name', 'check_out', 'install'):
+            # Subcommands either return a non-zero status code, return a JSON-dict result, or return a JSON-dict representation of ShouldNotDeploy.
+            try:
+                # Twiddle sys.path, import Deployment from deploy.py, and instantiate it.
 
-    # Better still, don't call deploy.py directly at all. I don't want to have to implement (or call a routine that implements) dispatching between the bootstrap and deploy modes in every deployment script. Instead, call python -m shiva --some-special-arg /the/deploy.py, and let it twiddle sys.path, import the deploy script, and call bootstrap() or deploy() within it. That way, all a deploy script author has to do is implement those 2 callables.
+                # and return the result of its $subcommand func. We mash the
+                # returned value into a string via pickle and print it to stdout so
+                # the parent process can pick it up.
+                print pickle.dumps(getattr(deployment, options.subcommand)())
+            except ShouldNotDeploy as exc:
+                print pickle.dumps(exc)
+            # Otherwise, explode and exit with a non-zero status.
+            return 0
+        elif options.subcommand == 'deploy':
+            # 'deploy' is the only public command. It does not print a pickle.
+            deployment.deploy_if_appropriate()
+            return 0
+    parser.print_usage()
+    return 2
