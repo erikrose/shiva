@@ -1,3 +1,10 @@
+# Prevent spurious errors during `python setup.py test`, in 2.6, a la
+# http://www.eby-sarna.com/pipermail/peak/2010-May/003357.html:
+try:
+    import multiprocessing
+except ImportError:
+    pass
+
 from setuptools import setup, find_packages
 
 
@@ -10,6 +17,8 @@ setup(
     author_email='erik@mozilla.com',
     license='MIT',
     packages=find_packages(exclude=['ez_setup']),
+    tests_require=['nose'],
+    test_suite='nose.collector',
     entry_points={
         'console_scripts': ['shiva = shiva_deployer.commandline:main']
         },

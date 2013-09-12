@@ -1,5 +1,4 @@
-from virtualenv import create_environment
-
+from shiva_deployer.commandline import VirtualEnv
 from shiva_deployer.exceptions import ShouldNotDeploy
 from shiva_deployer.tools import nonblocking_lock
 
@@ -9,6 +8,16 @@ class BasicDeployment(object):
     Shiva deployment
 
     """
+    def __init__(self, argv):
+        """Squirrel away the commandline args, from which our instance methods
+        will derive anything else they need to know.
+
+        :arg argv: A sys.argv-style list, starting with the first actual
+            argument not the executable
+
+        """
+        self.argv = argv
+
     # ---------------- Commonly overridden: ----------------
 
     def get_lock_name(self):
@@ -21,35 +30,37 @@ class BasicDeployment(object):
         is, the name of the folder containing the "deployment" folder.
 
         """
-        raise NotImplementedError  # TODO
+        raise NotImplementedError  # TODO: return repo name by default
 
     def check_out(self):
         """Check out the version of the project we should deploy, and return
         its absolute path on disk."""
         raise NotImplementedError
 
-    def install(self, checkout_path):
+    def install(self):
         """Build and install the project.
 
-        :arg checkout_path: The absolute path at which the project to install
-            is checked out
+        This is run from the new checkout.
 
         """
+        # This can't work out where the source to install is based on the
+        # class's module's location, because what if they imported the class
+        # from somewhere else for some odd reason? We need to figure it out
+        # based on the path to the deploy.py script in self.argv.
         raise NotImplementedError
 
     # ---------------- Not commonly overridden: ----------------
 
     def deploy_if_appropriate(self):
         """Deploy a new build if we should."""
-        # Makes a venv. If there was one from last time, finds it (to save disk IO).
-        deployment_venv = self.create_environment('/temp/dir/deployment1',
-                                                  site_packages=False,
-                                                  clear=False,
-                                                  never_download=True)
+        # Makes a deployment venv. This is the one to get out of the way of
+        # project requirments so the deploy script can have its own. If there
+        # was already a venv from last time, finds it (to save disk IO).
+        deployment_venv = VirtualEnv('/temp/dir/deployment1')
         # Peep- or pip-installs dxr/deployment/requirements.txt (should include shiva).
 
         # Runs `venv/python -m shiva_the_deployer get_lock_name /path/to/deploy.py`
-        lock_name = run_deploy_script('get_lock_name')  # TODO: Pass through the argv I received here and at every other invocation of run_deploy_script.
+        lock_name = deployment_venv.run_shiva('get_lock_name')  # TODO: Pass through the argv I received here and at every other invocation of run_shiva.
 
         # Takes out a nonblocking (fallthrough) lock. Maybe make it blocking optionally for pushbutton deploys. If it changes from one binary call to the next, take out both locks to be safe.
         with nonblocking_lock('shiva-deployer-%s' % lock_name) as got_lock:
@@ -63,13 +74,13 @@ class BasicDeployment(object):
                     # check_out() updated) since the current on-disk repo was
                     # checked out.
                     while checkout_path != old_checkout_path:
-                        checkout_path = run_deploy_script('check_out')
-                        # Makes a new venv.
-                        # Peep- or pip-installs dxr/deployment/requirements.txt
+                        checkout_path = deployment_venv.run_shiva('check_out')
+                        deployment_venv = VirtualEnv('some temp dir')
+                        # Peep- or pip-install checkout_path/deployment/requirements.txt
                         # (We can skip the previous 2 steps if the requirements are unchanged. A pip download cache should make none of this matter much.)
 
                     # Runs `venv/python /path/to/checkout/.../deploy.py`, which builds the project as contained in the checkout and installs it
-                    run_deploy_script('build_and_install')
+                    deployment_venv.run_shiva('install')
                 except ShouldNotDeploy:
                     pass
                 else:
@@ -83,6 +94,7 @@ class FancyDeployment(BasicDeployment):
     saves effort for most projects
 
     """
+    # TODO: How the heck are these args going to get passed in? Shiva doesn't know what to pass in. How about we pass in argv and leave the rest to the subclasser. We can implement parsing of a few common options, or something, in this class.
     def __init__(self,
                  kind,
                  manual_rev=None,
@@ -124,7 +136,7 @@ class FancyDeployment(BasicDeployment):
     def new_from_command_line(cls):
         """Handle command-line munging, and pass off control to the interesting
         stuff.
-        
+
         """
         # TODO: Replace with a generic UI.
         parser = OptionParser(
