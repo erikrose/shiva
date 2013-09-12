@@ -1,6 +1,6 @@
-==================
-Shiva The Deployer
-==================
+=========================
+Shiva, Deployer of Worlds
+=========================
 
 As we deploy our Python web apps more frequently, the process of deploying must
 become more robust. This is especially important when deploys are unsupervised.
@@ -11,19 +11,24 @@ deployment scripts so projects can concentrate on their unique needs rather
 than continnually reinventing (or skimping on) infrastructure.
 
 Shiva provides a light inversion-of-control framework for deployment of Python
-web projects. It implements the fairly standard top-level logic of deployment
-so all you have to do is, essentially, fill out a form--by writing a
-``Deployment`` subclass.
+web projects. It implements the standard but tricky-to-get-thoroughly-correct
+top-level logic of deployment so all you have to do is, essentially, fill out a
+form, by writing a ``Deployment`` subclass. In addition, it ships with many
+deployment building blocks to save you the hassle of continually rewriting them.
 
-To relieve you of rewriting them, Shiva also provides several useful
-primitives:
+Features include...
 
+* Automatic deploy-time re-homing of the deploy script into its own virtualenv
+  (complete with dependencies, if you need them), while keeping the project's
+  own dependencies separate
+* Time-travel bootstrapping: each version of your project is deployed with the
+  version of the deploy script from it, not one from a previous version.
+* Integration with Jenkins, to encourage more hands-free continuous deployment
+* A simple, readable way to run shell commands, so you get close to the
+  simplicity of shell scripts but with Python's better flow control
 * Locking (to prevent concurrent deploys, for example)
-* A simple, readable way to run shell commands
-* A way to bootstrap the deploy script using a virtualenv, even if it has
-  dependencies, while keeping the deploy script's dependencies separate from
-  the project's own
-* More to come, as we observe patterns
+
+We'll add lots more, as we observe patterns.
 
 
 Status
