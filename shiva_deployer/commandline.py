@@ -25,9 +25,7 @@ def main():
 
 
 def inner_main(argv):
-    """After creating a virtualenv with the proper requirements, run a
-    deployment script to pull down the latest good version of a project, then
-    install it using that new version of the deployment script.
+    """Run a shiva subcommand.
 
     Return a tuple of (status code, stdout output).
 

@@ -13,7 +13,7 @@ class BasicDeployment(object):
         will derive anything else they need to know.
 
         :arg argv: A sys.argv-style list, starting with the first actual
-            argument not the executable
+            argument, not the executable
 
         """
         self.argv = argv
@@ -52,14 +52,21 @@ class BasicDeployment(object):
     # ---------------- Not commonly overridden: ----------------
 
     def deploy_if_appropriate(self):
-        """Deploy a new build if we should."""
-        # Makes a deployment venv. This is the one to get out of the way of
-        # project requirments so the deploy script can have its own. If there
-        # was already a venv from last time, finds it (to save disk IO).
+        """After creating a virtualenv with the proper requirements, run a
+        deployment script to pull down the latest good version of a project,
+        then install it using that new version of the deployment script.
+
+        If it is not appropriate to deploy now--for instance, if the latest
+        version is already deployed, do nothing.
+
+        """
+        # Make a deployment venv from which to run the check_out and
+        # get_lock_name steps of the deploy script. This is in case the deploy
+        # script has any dependencies. TODO: If there was already a venv from
+        # last time, find it (to save disk IO).
         deployment_venv = VirtualEnv('/temp/dir/deployment1')
         # Peep- or pip-installs dxr/deployment/requirements.txt (should include shiva).
 
-        # Runs `venv/python -m shiva_the_deployer get_lock_name /path/to/deploy.py`
         lock_name = deployment_venv.run_shiva('get_lock_name')  # TODO: Pass through the argv I received here and at every other invocation of run_shiva.
 
         # Takes out a nonblocking (fallthrough) lock. Maybe make it blocking optionally for pushbutton deploys. If it changes from one binary call to the next, take out both locks to be safe.
