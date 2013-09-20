@@ -4,12 +4,13 @@ deployment"""
 from optparse import OptionParser
 from os.path import basename, join
 import pickle
+from subprocess import check_output
 import sys
 from sys import argv, executable, stderr
 
 from virtualenv import create_environment, path_locations
 
-from shiva_deployer import run, ShouldNotDeploy
+from shiva_deployer.exceptions import ShouldNotDeploy
 
 
 def main():
@@ -114,5 +115,7 @@ class VirtualEnv(object):
         representation.
 
         """
-        return wake_pickle(run('%s -m shiva_deployer %s %s' %
-                               (self.python_path, deploy_script, arg_string)))
+        # Not run(), so we can support spaces in paths
+        return wake_pickle(check_output([self.python_path, '-m',
+                                        'shiva_deployer', deploy_script,
+                                        arg_string]))

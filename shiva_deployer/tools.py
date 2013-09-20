@@ -27,10 +27,9 @@ def run(command, **kwargs):
     doesn't need to be read out of order, as with anonymous tokens.
 
     """
-    output = check_output(
+    return check_output(
         command.format(**dict((k, quote(v)) for k, v in kwargs.iteritems())),
         shell=True)
-    return output
 
 
 @contextmanager
@@ -46,8 +45,8 @@ def cd(path):
 def nonblocking_lock(lock_name):
     """Context manager that acquires and releases a file-based lock.
 
-    If it cannot immediately acquire it, it falls through and returns False.
-    Otherwise, it returns True. I wish we had macros so we could just skip the
+    If we cannot immediately acquire a lock, fall through and return False.
+    Otherwise, return True. I wish we had macros so we could just skip the
     "with" body.
 
     """
